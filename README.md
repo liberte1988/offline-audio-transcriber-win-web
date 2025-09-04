@@ -1,11 +1,14 @@
-Скрипт для установки под Windows для offline-audio-transcriber от https://github.com/empenoso Добавлена возможность установить веб сервер.
+# offline-audio-transcriber-windows
+Скрипт для установки под Windows. Форк offline-audio-transcriber от https://github.com/empenoso
+Добавлена возможность установить веб сервер.
 
-УСТАНОВКА: клонировать оригинальный гит от автора https://github.com/empenoso
+Возможности:
+1. Веб интерфейс
+2. Загрузка сразу нескольких файлов
 
-git clone https://github.com/empenoso/offline-audio-transcriber.git
+УСТАНОВКА:
 
-скачать https://github.com/liberte1988/offline-audio-transcriber-windows/blob/main/setup_wishper.ps1 и положить в папку
-
-открыть PowerShell или Терминал от имени администратора и запустить .\setup_wishper.ps1
-
-UPDATE: Для установки и запуска веб сервера воспользуйтесь файлом start-web-server.bat
+1. git clone https://github.com/liberte1988/offline-audio-transcriber-win-web.git
+2. Скачать CUDA - https://developer.nvidia.com/cuda-toolkit
+3. открыть PowerShell или Терминал от имени администратора и запустить .\setup_wishper.ps1
+4. Для установки и запуска веб сервера воспользуйтесь файлом start-web-server.bat
