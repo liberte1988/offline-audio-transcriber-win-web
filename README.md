@@ -1,12 +1,12 @@
-# offline-audio-transcriber-windows
+# offline-audio-transcriber-win-web
 Скрипт для установки под Windows. Форк offline-audio-transcriber от https://github.com/empenoso
 Добавлена возможность установить веб сервер.
 
-Возможности:
+# Возможности:
 1. Веб интерфейс
 2. Загрузка сразу нескольких файлов
 
-УСТАНОВКА:
+# УСТАНОВКА:
 
 1. git clone https://github.com/liberte1988/offline-audio-transcriber-win-web.git
 2. Скачать CUDA - https://developer.nvidia.com/cuda-toolkit
