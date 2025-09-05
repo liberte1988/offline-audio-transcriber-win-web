@@ -18,7 +18,7 @@
 #
 # Автор: Адаптация для Windows
 # На основе оригинального скрипта: Михаил Шардин https://shardin.name/
-# Версия: 1.2 Windows
+# Версия: 1.3 Windows
 #
 
 Write-Host "🚀 Установка окружения для OpenAI Whisper на Windows" -ForegroundColor Green
@@ -135,28 +135,27 @@ if ($cudaDetected) {
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 }
 
-# Установка OpenAI Whisper с игнорированием конфликтов зависимостей
+# Установка OpenAI Whisper
 Write-Host "🎙️  Установка OpenAI Whisper..." -ForegroundColor Yellow
-pip install openai-whisper --no-deps
-pip install openai-whisper  # Повторная установка для зависимостей
+pip install openai-whisper
 
-# Дополнительные библиотеки с обработкой конфликтов
-Write-Host "📚 Установка дополнительных библиотек..." -ForegroundColor Yellow
+# Установка основных зависимостей
+Write-Host "📚 Установка основных библиотек..." -ForegroundColor Yellow
+$corePackages = @(
+    "numpy",
+    "scipy", 
+    "librosa>=0.10.0",
+    "soundfile>=0.10.0",
+    "scikit-learn>=1.0.0",
+    "tqdm",
+    "flask==2.3.3",
+    "werkzeug==2.3.7",
+    "python-multipart==0.0.6"
+)
 
-# Установка основных зависимостей с игнорированием конфликтов
-$packages = @("numpy", "scipy", "librosa", "soundfile", "pydub")
-foreach ($package in $packages) {
+foreach ($package in $corePackages) {
     Write-Host "📦 Установка $package..." -ForegroundColor Cyan
-    pip install $package --no-deps
-    pip install $package  # Повторная установка для зависимостей
-}
-
-# Установка недостающих зависимостей для разрешения конфликтов
-Write-Host "🔧 Разрешение конфликтов зависимостей..." -ForegroundColor Yellow
-$missingDeps = @("h11>=0.8", "fastapi<1,>=0", "pydantic<2.9,>=2.4.1")
-foreach ($dep in $missingDeps) {
-    Write-Host "📦 Установка недостающей зависимости: $dep" -ForegroundColor Cyan
-    pip install $dep
+    pip install $package
 }
 
 # Установка FFmpeg (если не установлен)
@@ -172,13 +171,20 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
 
 # Проверка установленных пакетов
 Write-Host "📊 Проверка установленных пакетов..." -ForegroundColor Yellow
-pip list | Select-String "torch", "whisper", "numpy", "scipy", "librosa"
+pip list | Select-String "torch", "whisper", "numpy", "scipy", "librosa", "flask"
 
 # Тестирование установки
 Write-Host "🧪 Тестирование установки..." -ForegroundColor Yellow
 python -c "
 import torch
 import whisper
+import numpy
+import scipy
+import librosa
+import soundfile
+import sklearn
+import flask
+
 print(f'PyTorch версия: {torch.__version__}')
 print(f'CUDA доступна: {torch.cuda.is_available()}')
 
@@ -201,34 +207,27 @@ else:
     print('💻 Будет использоваться CPU')
 
 print('✅ Whisper импортирован успешно')
-
-# Дополнительная проверка основных зависимостей
-try:
-    import numpy
-    import scipy
-    import librosa
-    import soundfile
-    import pydub
-    print('✅ Все основные зависимости загружены успешно')
-except ImportError as e:
-    print(f'⚠️  Ошибка импорта: {e}')
+print('✅ Все основные зависимости загружены успешно')
+print('✅ Установка завершена успешно!')
 "
 
 Write-Host ""
 Write-Host "🎉 Установка завершена!" -ForegroundColor Green
 Write-Host "=====================================================" -ForegroundColor Green
-Write-Host "Примечание: Некоторые предупреждения о конфликтах зависимостей нормальны" -ForegroundColor Yellow
-Write-Host "и не должны мешать работе Whisper" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Для активации окружения используйте:" -ForegroundColor Yellow
 Write-Host ".\.venv\Scripts\Activate.ps1" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Для запуска транскрибации:" -ForegroundColor Yellow
-Write-Host "python whisper_transcribe.py [папка_с_аудио] [модель] [выходная_папка]" -ForegroundColor Cyan
+Write-Host "python whisper_transcribe.py [папка_с_аудио] [модель] [выходная_папка] [диаризация] [говорящие]" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Примеры:" -ForegroundColor Yellow
 Write-Host "python whisper_transcribe.py ./audio" -ForegroundColor Cyan
 Write-Host "python whisper_transcribe.py ./audio large ./results" -ForegroundColor Cyan
+Write-Host "python whisper_transcribe.py ./audio large ./results true 2" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Доступные модели (от быстрой к точной):" -ForegroundColor Yellow
 Write-Host "tiny, base, small, medium, large" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Для запуска веб-сервера:" -ForegroundColor Yellow
+Write-Host "python setup-web-server.py" -ForegroundColor Cyan
