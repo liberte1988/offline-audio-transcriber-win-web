@@ -2,34 +2,17 @@
 # -*- coding: utf-8 -*-
 
 """
-🛠️ Скрипт установки и запуска веб-сервера для Whisper
+🛠️ Установка и запуск веб-сервера для Whisper
 """
 
 import os
 import sys
 import subprocess
-import shutil
-from pathlib import Path
-
-def run_command(cmd, description=""):
-    """Запуск команды с обработкой ошибок"""
-    print(f"📦 {description}..." if description else f"🚀 {cmd}")
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd='.', encoding='utf-8')
-        if result.returncode == 0:
-            print("✅ Успешно")
-            return True
-        else:
-            print(f"❌ Ошибка: {result.stderr}")
-            return False
-    except Exception as e:
-        print(f"❌ Исключение: {e}")
-        return False
 
 def check_venv():
     """Проверка виртуального окружения"""
-    venv_path = Path(".venv")
-    if venv_path.exists():
+    venv_path = ".venv"
+    if os.path.exists(venv_path):
         print("✅ Виртуальное окружение найдено")
         return True
     else:
@@ -38,50 +21,39 @@ def check_venv():
 
 def install_dependencies():
     """Установка зависимостей Flask"""
-    print("\n" + "="*50)
-    print("📦 УСТАНОВКА ЗАВИСИМОСТЕЙ WEB-СЕРВЕРА")
-    print("="*50)
+    print("\n📦 Установка зависимостей...")
     
-    # Определяем путь к Python в виртуальном окружении
+    # Определяем путь к pip
     if os.name == 'nt':  # Windows
-        python_path = ".venv\\Scripts\\python.exe"
         pip_path = ".venv\\Scripts\\pip.exe"
     else:  # Linux/Mac
-        python_path = ".venv/bin/python"
         pip_path = ".venv/bin/pip"
     
-    # Проверяем существование pip
-    if not os.path.exists(pip_path):
-        print("🔄 Устанавливаем pip...")
-        run_command(f'"{python_path}" -m ensurepip --upgrade', "Установка pip")
-    
-    # Устанавливаем Flask и зависимости
-    dependencies = [
-        "flask==2.3.3",
-        "werkzeug==2.3.7", 
-        "python-multipart==0.0.6",
-        "librosa>=0.10.0",
-        "scikit-learn>=1.0.0",
-        "soundfile>=0.10.0",
-        "scipy>=1.7.0"
-    ]
-    
-    for dep in dependencies:
-        if not run_command(f'"{python_path}" -m pip install {dep}', f"Установка {dep}"):
-            # Альтернативный способ установки
-            run_command(f'"{python_path}" -m easy_install {dep.split("==")[0]}', f"Альтернативная установка {dep}")
+    if os.path.exists(pip_path):
+        dependencies = [
+            "flask==2.3.3",
+            "werkzeug==2.3.7", 
+            "python-multipart==0.0.6"
+        ]
+        
+        for dep in dependencies:
+            print(f"Устанавливаю: {dep}")
+            try:
+                subprocess.run([pip_path, "install", dep], check=True)
+                print(f"✅ {dep} установлен")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Ошибка установки {dep}: {e}")
+    else:
+        print("❌ pip не найден в виртуальном окружении")
 
 def create_app_files():
     """Создание необходимых файлов для веб-сервера"""
-    print("\n" + "="*50)
-    print("📁 СОЗДАНИЕ ФАЙЛОВ WEB-СЕРВЕРА")
-    print("="*50)
+    print("\n📁 Создание файлов веб-сервера...")
     
     # Создаем папку templates если её нет
-    templates_dir = Path("templates")
-    templates_dir.mkdir(exist_ok=True)
+    os.makedirs("templates", exist_ok=True)
     
-    # Создаем app.py с исправленной логикой
+    # Создаем app.py
     app_content = '''#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -93,14 +65,12 @@ import os
 import sys
 import glob
 import zipfile
-import shutil
 import subprocess
 import threading
 import time
 from pathlib import Path
 
 # Исправление кодировки для Windows
-import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
@@ -117,7 +87,7 @@ except ImportError as e:
 # Настройки приложения
 app = Flask(__name__)
 app.secret_key = 'whisper-web-secret-key-2024'
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # Увеличили до 200MB
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 
 # Папки
 UPLOAD_FOLDER = 'audio'
@@ -141,7 +111,6 @@ def allowed_file(filename):
 def cleanup_folders():
     """Очистка папок перед обработкой"""
     try:
-        # Очищаем папки
         for folder in [UPLOAD_FOLDER, RESULTS_FOLDER]:
             for item in os.listdir(folder):
                 item_path = os.path.join(folder, item)
@@ -156,7 +125,6 @@ def cleanup_folders():
 def create_zip_archive():
     """Создание ZIP архива с результатами"""
     try:
-        # Ищем все файлы результатов
         result_files = []
         for ext in ['.txt', '.srt', '.vtt', '.json']:
             result_files.extend(glob.glob(os.path.join(RESULTS_FOLDER, f'*{ext}')))
@@ -165,7 +133,6 @@ def create_zip_archive():
             print("❌ Файлы результатов не найдены")
             return None
         
-        # Создаем ZIP архив
         zip_filename = "results.zip"
         zip_path = os.path.join(RESULTS_FOLDER, zip_filename)
         
@@ -190,22 +157,11 @@ def process_audio():
         
         print("🚀 Запуск обработки всех файлов в папке audio...")
         
-        # Получаем параметры диаризации из формы
-        enable_diarization = request.form.get('diarization', 'false').lower() == 'true'
-        n_speakers = int(request.form.get('n_speakers', 2))
-        
-        print(f"🎤 Диаризация: {'ВКЛЮЧЕНА' if enable_diarization else 'ВЫКЛЮЧЕНА'}")
-        if enable_diarization:
-            print(f"👥 Количество говорящих: {n_speakers}")
-        
-        # Запускаем скрипт обработки
         cmd = [
             sys.executable, 'whisper_transcribe.py',
             UPLOAD_FOLDER,
-            'large',  # Всегда используем large модель
-            RESULTS_FOLDER,
-            str(enable_diarization).lower(),
-            str(n_speakers)
+            'large',
+            RESULTS_FOLDER
         ]
         
         print(f"Выполняем команду: {' '.join(cmd)}")
@@ -213,8 +169,6 @@ def process_audio():
         
         if result.returncode == 0:
             print("✅ Обработка завершена успешно")
-            
-            # Создаем ZIP архив после успешной обработки
             zip_filename = create_zip_archive()
             
             processing_status['is_processing'] = False
@@ -239,25 +193,21 @@ def index():
     """Главная страница"""
     processed_files = []
     
-    # Проверяем наличие ZIP архива
     zip_files = glob.glob(os.path.join(RESULTS_FOLDER, '*.zip'))
     for zip_file in zip_files:
         processed_files.append({
             'name': os.path.splitext(os.path.basename(zip_file))[0],
             'zip_path': os.path.basename(zip_file),
-            'size': os.path.getsize(zip_file),
-            'is_diarized': '_diarized' in os.path.basename(zip_file)
+            'size': os.path.getsize(zip_file)
         })
     
-    # Также показываем отдельные файлы результатов если ZIP нет
     if not processed_files:
         for result_file in glob.glob(os.path.join(RESULTS_FOLDER, '*')):
             if not result_file.endswith('.zip'):
                 processed_files.append({
                     'name': os.path.splitext(os.path.basename(result_file))[0],
                     'zip_path': os.path.basename(result_file),
-                    'size': os.path.getsize(result_file),
-                    'is_diarized': '_diarized' in os.path.basename(result_file)
+                    'size': os.path.getsize(result_file)
                 })
     
     return render_template('index.html', 
@@ -266,7 +216,7 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Обработка загрузки файлов (множественная)"""
+    """Обработка загрузки файлов"""
     global processing_status
     
     if 'files' not in request.files:
@@ -278,21 +228,14 @@ def upload_file():
         flash('Файлы не выбраны', 'error')
         return redirect('/')
     
-    # Получаем параметры диаризации
-    enable_diarization = request.form.get('diarization', 'false').lower() == 'true'
-    n_speakers = int(request.form.get('n_speakers', 2))
-    
-    # Проверяем, не идет ли уже обработка
     if processing_status['is_processing']:
         flash('Обработка уже выполняется. Дождитесь завершения.', 'warning')
         return redirect('/')
     
-    # Очищаем папки перед загрузкой новых файлов
     if not cleanup_folders():
         flash('Ошибка очистки папки', 'error')
         return redirect('/')
     
-    # Сохраняем все файлы
     saved_files = []
     for file in files:
         if file and allowed_file(file.filename):
@@ -306,7 +249,6 @@ def upload_file():
         flash('Нет подходящих файлов для загрузки', 'error')
         return redirect('/')
     
-    # Запускаем обработку в фоне с параметрами диаризации
     def process_task():
         success, message = process_audio()
         if success:
@@ -316,8 +258,7 @@ def upload_file():
     
     threading.Thread(target=process_task, daemon=True).start()
     
-    diarization_info = " с диаризацией" if enable_diarization else ""
-    flash(f'Загружено {len(saved_files)} файлов. Обработка{diarization_info} начата. Это может занять несколько минут.', 'success')
+    flash(f'Загружено {len(saved_files)} файлов. Обработка начата. Это может занять несколько минут.', 'success')
     return redirect('/')
 
 @app.route('/download/<filename>')
@@ -372,7 +313,7 @@ if __name__ == '__main__':
 
     with open("app.py", "w", encoding="utf-8") as f:
         f.write(app_content)
-    print("✅ app.py создан (исправленная версия)")
+    print("✅ app.py создан")
 
     # Создаем index.html
     index_content = '''<!DOCTYPE html>
@@ -394,28 +335,6 @@ if __name__ == '__main__':
             50% { opacity: 0.7; }
             100% { opacity: 1; }
         }
-        .diarization-settings {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-            border: 1px solid #dee2e6;
-        }
-        
-        .speaker-badge {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-            margin-right: 5px;
-        }
-
-        .speaker-1 { background: #ff6b6b; color: white; }
-        .speaker-2 { background: #4ecdc4; color: white; }
-        .speaker-3 { background: #45b7d1; color: white; }
-        .speaker-4 { background: #f9ca24; color: black; }
-        .speaker-5 { background: #6c5ce7; color: white; }
     </style>
 </head>
 <body>
@@ -428,10 +347,9 @@ if __name__ == '__main__':
     </div>
 
     <div class="container">
-        <!-- Форма загрузки -->
         <div class="card shadow-lg mb-4">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="fas fa-upload me-2"></i>Загрузка аудиофайлов</h5>
+                <h5 class="mb-0">📤 Загрузка аудиофайлов</h5>
             </div>
             <div class="card-body">
                 <form action="/upload" method="post" enctype="multipart/form-data" id="uploadForm">
@@ -441,40 +359,13 @@ if __name__ == '__main__':
                         <div class="form-text">Поддерживаемые форматы: MP3, WAV, M4A (макс. 200MB всего)</div>
                     </div>
                     
-                    <!-- Настройки диаризации -->
-                    <div class="diarization-settings">
-                        <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="diarizationToggle" name="diarization" value="true">
-                            <label class="form-check-label" for="diarizationToggle">
-                                🎤 Включить разделение по говорящим
-                            </label>
-                        </div>
-                        
-                        <div class="form-group" id="speakersGroup" style="display: none;">
-                            <label class="form-label">Количество говорящих:</label>
-                            <select class="form-select" name="n_speakers" id="nSpeakers">
-                                <option value="2">2 человека</option>
-                                <option value="3">3 человека</option>
-                                <option value="4">4 человека</option>
-                                <option value="5">5 человек</option>
-                            </select>
-                            <div class="form-text">Увеличивает время обработки на 20-30%</div>
-                        </div>
-                    </div>
-                    
-                    <div class="alert alert-warning mt-3" id="timeWarning" style="display: none;">
-                        ⏱️ <strong>Внимание!</strong> Диаризация увеличивает время обработки в 2-3 раза.
-                        Для файлов больше 5MB рекомендуется отключать диаризацию.
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary btn-lg w-100 mt-3" id="submitBtn" {% if is_processing %}disabled{% endif %}>
-                        {% if is_processing %}⏳ Обработка...{% else %}🚀 Начать обработку{% endif %}
+                    <button type="submit" class="btn btn-primary btn-lg w-100 mt-3" id="submitBtn">
+                        🚀 Начать обработку
                     </button>
                 </form>
             </div>
         </div>
 
-        <!-- Сообщения -->
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
@@ -486,7 +377,6 @@ if __name__ == '__main__':
             {% endif %}
         {% endwith %}
 
-        <!-- Статус обработки -->
         <div class="card shadow-lg mb-4" id="statusCard" style="display: none;">
             <div class="card-header bg-warning text-dark">
                 <h5 class="mb-0">⏳ Обработка...</h5>
@@ -499,11 +389,9 @@ if __name__ == '__main__':
                 <div class="progress mb-2">
                     <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
                 </div>
-                <small class="text-muted">Страница обновится автоматически по завершении</small>
             </div>
         </div>
 
-        <!-- Обработанные файлы -->
         {% if processed_files %}
         <div class="card shadow-lg">
             <div class="card-header bg-success text-white">
@@ -518,16 +406,12 @@ if __name__ == '__main__':
                                 <th>Размер</th>
                                 <th>Тип</th>
                                 <th>Действия</th>
-                                                    </thead>
+                            </tr>
+                        </thead>
                         <tbody>
                             {% for file in processed_files %}
                             <tr>
-                                <td>
-                                    {{ file.name }}
-                                    {% if file.is_diarized %}
-                                    <span class="badge bg-info">🎤 Диаризация</span>
-                                    {% endif %}
-                                </td>
+                                <td>{{ file.name }}</td>
                                 <td>{{ (file.size / 1024)|round(2) }} KB</td>
                                 <td>
                                     {% if file.zip_path.endswith('.zip') %}
@@ -550,10 +434,9 @@ if __name__ == '__main__':
         </div>
         {% endif %}
 
-        <!-- Кнопка очистки -->
         <div class="text-center mt-4">
             <form action="/cleanup" method="post" onsubmit="return confirm('Удалить ВСЕ файлы?')">
-                <button type="submit" class="btn btn-outline-danger" {% if is_processing %}disabled{% endif %}>
+                <button type="submit" class="btn btn-outline-danger">
                     🗑️ Очистить все файлы
                 </button>
             </form>
@@ -564,15 +447,13 @@ if __name__ == '__main__':
     <script>
         let checkInterval;
         
-        // Функция проверки статуса
         async function checkProcessingStatus() {
             try {
                 const response = await fetch('/status');
-                const data = await response.json();
+                                const data = await response.json();
                 
                 console.log('Статус обработки:', data);
                 
-                // Обновляем текст статуса
                 if (data.is_processing) {
                     const minutes = Math.floor(data.processing_time / 60);
                     const seconds = Math.floor(data.processing_time % 60);
@@ -580,14 +461,12 @@ if __name__ == '__main__':
                         `Обработка выполняется: ${minutes}м ${seconds}с`;
                 }
                 
-                // Если обработка завершена и есть результаты
                 if (!data.is_processing && data.ready) {
                     clearInterval(checkInterval);
                     console.log('Обработка завершена, обновляем страницу...');
                     location.reload();
                 }
                 
-                // Если обработка завершилась с ошибкой (нет результатов через 2 минуты)
                 if (!data.is_processing && !data.ready && data.processing_time > 120) {
                     clearInterval(checkInterval);
                     console.log('Возможно ошибка обработки, обновляем страницу...');
@@ -599,31 +478,30 @@ if __name__ == '__main__':
             }
         }
 
-        // Показываем статус обработки при отправке формы
         document.getElementById('uploadForm').addEventListener('submit', function() {
             document.getElementById('statusCard').style.display = 'block';
             document.getElementById('submitBtn').disabled = true;
             
-            // Запускаем проверку статуса каждые 3 секунды
             checkInterval = setInterval(checkProcessingStatus, 3000);
-            
-            // Также проверяем сразу после отправки
             setTimeout(checkProcessingStatus, 1000);
         });
 
-        // Проверяем статус при загрузке страницы (если уже идет обработка)
         document.addEventListener('DOMContentLoaded', function() {
             {% if is_processing %}
             document.getElementById('statusCard').style.display = 'block';
             document.getElementById('submitBtn').disabled = true;
             
-            // Запускаем проверку статуса
             checkInterval = setInterval(checkProcessingStatus, 3000);
             checkProcessingStatus();
             {% endif %}
         });
 
-        // Предупреждение о больших файлах
+        setInterval(() => {
+            if (document.getElementById('statusCard').style.display === 'block') {
+                checkProcessingStatus();
+            }
+        }, 30000);
+
         document.querySelector('input[type="file"]').addEventListener('change', function(e) {
             const files = e.target.files;
             let totalSize = 0;
@@ -632,13 +510,12 @@ if __name__ == '__main__':
                 totalSize += files[i].size;
             }
             
-            if (totalSize > 100 * 1024 * 1024) { // 100MB
+            if (totalSize > 100 * 1024 * 1024) {
                 if (!confirm(`Общий размер файлов: ${(totalSize / 1024 / 1024).toFixed(1)}MB. Это может занять много времени. Продолжить?`)) {
                     e.target.value = '';
                 }
             }
             
-            // Показываем список выбранных файлов
             if (files.length > 0) {
                 let fileList = 'Выбрано файлов: ' + files.length;
                 if (files.length <= 5) {
@@ -652,72 +529,9 @@ if __name__ == '__main__':
                 console.log(fileList);
             }
         });
-
-        // Автоматическая проверка статуса каждые 30 секунд на случай если интервал сбился
-        setInterval(() => {
-            if (document.getElementById('statusCard').style.display === 'block') {
-                checkProcessingStatus();
-            }
-        }, 30000);
-
-        // Управление настройками диаризации
-        document.getElementById('diarizationToggle').addEventListener('change', function(e) {
-            const speakersGroup = document.getElementById('speakersGroup');
-            const timeWarning = document.getElementById('timeWarning');
-            speakersGroup.style.display = e.target.checked ? 'block' : 'none';
-            timeWarning.style.display = e.target.checked ? 'block' : 'none';
-        });
-
-        // Показываем предупреждение о времени обработки
-        document.getElementById('diarizationToggle').addEventListener('change', function(e) {
-            if (e.target.checked) {
-                const files = document.querySelector('input[type="file"]').files;
-                if (files.length > 0) {
-                    let totalSize = 0;
-                    for (let i = 0; i < files.length; i++) {
-                        totalSize += files[i].size;
-                    }
-                    if (totalSize > 50 * 1024 * 1024) { // 50MB
-                        if (!confirm('Диаризация больших файлов может занять много времени. Продолжить?')) {
-                            e.target.checked = false;
-                            document.getElementById('speakersGroup').style.display = 'none';
-                            document.getElementById('timeWarning').style.display = 'none';
-                        }
-                    }
-                }
-            }
-        });
-
-        // Сохраняем настройки в localStorage
-        document.addEventListener('DOMContentLoaded', function() {
-            const diarizationToggle = document.getElementById('diarizationToggle');
-            const nSpeakers = document.getElementById('nSpeakers');
-            
-            // Восстанавливаем настройки
-            const savedDiarization = localStorage.getItem('diarizationEnabled') === 'true';
-            const savedNSpeakers = localStorage.getItem('nSpeakers') || '2';
-            
-            diarizationToggle.checked = savedDiarization;
-            nSpeakers.value = savedNSpeakers;
-            
-            if (savedDiarization) {
-                document.getElementById('speakersGroup').style.display = 'block';
-                document.getElementById('timeWarning').style.display = 'block';
-            }
-            
-            // Сохраняем при изменении
-            diarizationToggle.addEventListener('change', function() {
-                localStorage.setItem('diarizationEnabled', this.checked);
-            });
-            
-            nSpeakers.addEventListener('change', function() {
-                localStorage.setItem('nSpeakers', this.value);
-            });
-        });
     </script>
 </body>
-</html>
-'''
+</html>'''
 
     with open("templates/index.html", "w", encoding="utf-8") as f:
         f.write(index_content)
@@ -725,18 +539,15 @@ if __name__ == '__main__':
 
 def start_server():
     """Запуск веб-сервера"""
-    print("\n" + "="*50)
-    print("🚀 ЗАПУСК WEB-СЕРВЕРА")
-    print("="*50)
+    print("\n🚀 Запуск веб-сервера...")
     
-    # Определяем путь к Python
     if os.name == 'nt':  # Windows
         python_path = ".venv\\Scripts\\python.exe"
     else:  # Linux/Mac
         python_path = ".venv/bin/python"
     
     if os.path.exists(python_path):
-        print("🌐 Запускаем сервер...")
+        print("🌐 Сервер запускается...")
         os.system(f'"{python_path}" app.py')
     else:
         print("❌ Python в виртуальном окружении не найден")
@@ -747,20 +558,14 @@ def main():
     print("🛠️  УСТАНОВКА И ЗАПУСК WEB-СЕРВЕРА WHISPER")
     print("="*60)
     
-    # Проверяем виртуальное окружение
     if not check_venv():
         print("❌ Сначала создайте виртуальное окружение:")
         print("python -m venv .venv")
-        print(".\.venv\Scripts\activate")
+        print(".venv\\Scripts\\activate")
         return
     
-    # Устанавливаем зависимости
     install_dependencies()
-    
-    # Создаем файлы
     create_app_files()
-    
-    # Запускаем сервер
     start_server()
 
 if __name__ == "__main__":

@@ -45,13 +45,6 @@ import whisper
 import torch
 import io
 
-# Добавьте эти импорты после существующих
-import librosa
-import soundfile as sf
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-import numpy as np
-
 # Устанавливаем UTF-8 кодировку для вывода
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
@@ -156,281 +149,22 @@ def transcribe_audio(model, file_path, device="cpu", language="ru"):
 def get_audio_duration(file_path):
     """Получить длительность аудиофайла"""
     try:
+        import librosa
         y, sr = librosa.load(file_path, sr=None)
         duration = len(y) / sr
         return duration
     except:
         return 0
 
-def fast_kmeans_diarization(audio_path, n_speakers=2, min_segment_duration=1.0):
-    """
-    Быстрая диаризация на основе K-Means и MFCC
-    """
-    try:
-        print("🔊 Быстрая диаризация (K-Means)...")
-        
-        # Загрузка аудио
-        y, sr = librosa.load(audio_path, sr=16000)
-        duration = len(y) / sr
-        
-        # Извлечение MFCC features
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, n_fft=2048, hop_length=512)
-        mfccs = mfccs.T  # Транспонируем для кластеризации по времени
-        
-        # Нормализация
-        scaler = StandardScaler()
-        X = scaler.fit_transform(mfccs)
-        
-        # K-Means кластеризация (быстрее чем Spectral)
-        kmeans = KMeans(n_clusters=n_speakers, random_state=42, n_init=10)
-        labels = kmeans.fit_predict(X)
-        
-        # Создание сегментов
-        hop_duration = 512 / sr  # Длительность одного фрейма в секундах
-        segments = []
-        current_speaker = None
-        current_start = 0
-        
-        for i, label in enumerate(labels):
-            current_time = i * hop_duration
-            
-            if current_speaker is None:
-                current_speaker = f"spk_{label + 1}"
-                current_start = current_time
-            elif f"spk_{label + 1}" != current_speaker:
-                segment_duration = current_time - current_start
-                if segment_duration >= min_segment_duration:
-                    segments.append({
-                        'speaker': current_speaker,
-                        'start': current_start,
-                        'end': current_time,
-                        'duration': segment_duration
-                    })
-                current_speaker = f"spk_{label + 1}"
-                current_start = current_time
-        
-        # Последний сегмент
-        if current_speaker is not None:
-            segment_duration = duration - current_start
-            if segment_duration >= min_segment_duration:
-                segments.append({
-                    'speaker': current_speaker,
-                    'start': current_start,
-                    'end': duration,
-                    'duration': segment_duration
-                })
-        
-        print(f"✅ Найдено {len(segments)} сегментов за {duration:.1f}с аудио")
-        return segments
-        
-    except Exception as e:
-        print(f"❌ Ошибка быстрой диаризации: {e}")
-        return []
+def format_timestamp(seconds):
+    """Форматирование времени для SRT"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
-def energy_pitch_diarization(audio_path, n_speakers=2, min_segment_duration=1.0):
-    """
-    Диаризация на основе энергии и высоты тона (очень быстрая)
-    """
-    try:
-        print("🔊 Диаризация по энергии и тону...")
-        
-        y, sr = librosa.load(audio_path, sr=16000)
-        
-        # Детекция речи по энергии
-        energy = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
-        energy_threshold = np.percentile(energy, 25)
-        speech_frames = energy > energy_threshold
-        
-        # Извлечение высоты тона только для речевых фреймов
-        pitches = []
-        times = []
-        
-        for i, is_speech in enumerate(speech_frames):
-            if is_speech:
-                start = i * 512
-                end = start + 2048
-                if end < len(y):
-                    frame = y[start:end]
-                    # Быстрая оценка высоты тона
-                    f0 = librosa.yin(frame, fmin=80, fmax=400, sr=sr)
-                    if not np.isnan(f0[0]):
-                        pitches.append(f0[0])
-                        times.append(i * 512 / sr)
-        
-        if len(pitches) < 10:
-            return []
-        
-        # Кластеризация по высоте тона
-        pitches = np.array(pitches).reshape(-1, 1)
-        kmeans = KMeans(n_clusters=n_speakers, random_state=42, n_init=5)
-        pitch_labels = kmeans.fit_predict(pitches)
-        
-        # Создание сегментов
-        segments = []
-        current_speaker = None
-        current_start = 0
-        
-        for i, (time, label) in enumerate(zip(times, pitch_labels)):
-            speaker_id = f"spk_{label + 1}"
-            
-            if current_speaker is None:
-                current_speaker = speaker_id
-                current_start = time
-            elif speaker_id != current_speaker:
-                if time - current_start >= min_segment_duration:
-                    segments.append({
-                        'speaker': current_speaker,
-                        'start': current_start,
-                        'end': time,
-                        'duration': time - current_start
-                    })
-                current_speaker = speaker_id
-                current_start = time
-        
-        print(f"✅ Диаризация по тону: {len(segments)} сегментов")
-        return segments
-        
-    except Exception as e:
-        print(f"❌ Ошибка диаризации по тону: {e}")
-        return []
-
-def smart_diarization(audio_path, n_speakers=2, method="auto"):
-    """
-    Умный выбор метода диаризации в зависимости от ситуации
-    """
-    # Определяем длительность аудио
-    y, sr = librosa.load(audio_path, sr=None)
-    duration = len(y) / sr
-    
-    if method == "auto":
-        if duration > 300:  # > 5 минут - используем самый быстрый метод
-            return energy_pitch_diarization(audio_path, n_speakers)
-        elif duration > 60:  # 1-5 минут - быстрый K-Means
-            return fast_kmeans_diarization(audio_path, n_speakers)
-        else:  # < 1 минуты - точный метод
-            return fast_kmeans_diarization(audio_path, n_speakers)  # Используем K-Means для точности
-    elif method == "fast":
-        return energy_pitch_diarization(audio_path, n_speakers)
-    elif method == "balanced":
-        return fast_kmeans_diarization(audio_path, n_speakers)
-    else:
-        return fast_kmeans_diarization(audio_path, n_speakers)
-
-def transcribe_with_diarization(model, audio_path, output_dir, language="ru", n_speakers=2):
-    """
-    Транскрибация с диаризацией
-    """
-    try:
-        print(f"🎤 Диаризация для {n_speakers} говорящих...")
-        
-        # Выбор метода диаризации
-        segments = smart_diarization(audio_path, n_speakers, "balanced")
-        
-        if not segments:
-            print("⚠️  Диаризация не дала результатов")
-            return None
-        
-        # Загружаем аудио для транскрибации
-        y, sr = librosa.load(audio_path, sr=16000)
-        
-        results = []
-        total_segments = len(segments)
-        
-        for i, segment in enumerate(segments, 1):
-            print(f"🔄 Обработка сегмента {i}/{total_segments}...", end="", flush=True)
-            
-            start_sample = int(segment['start'] * sr)
-            end_sample = int(segment['end'] * sr)
-            
-            # Проверяем границы
-            if start_sample >= len(y) or end_sample > len(y):
-                continue
-                
-            segment_audio = y[start_sample:end_sample]
-            
-            if len(segment_audio) == 0:
-                continue
-            
-            # Сохраняем временный файл для транскрибации
-            temp_path = os.path.join(output_dir, f"temp_segment_{i}.wav")
-            sf.write(temp_path, segment_audio, sr)
-            
-            # Транскрибируем сегмент
-            try:
-                result = model.transcribe(
-                    temp_path,
-                    language=language,
-                    verbose=False,
-                    fp16=torch.cuda.is_available()
-                )
-                
-                results.append({
-                    'speaker': segment['speaker'],
-                    'start': segment['start'],
-                    'end': segment['end'],
-                    'text': result['text'].strip(),
-                    'segments': result.get('segments', [])
-                })
-                
-                print("✅")
-                
-            except Exception as e:
-                print(f"❌: {e}")
-            finally:
-                # Удаляем временный файл
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-        
-        return results
-        
-    except Exception as e:
-        print(f"❌ Ошибка в transcribe_with_diarization: {e}")
-        return None
-
-def save_diarized_results(results, output_dir, base_name):
-    """
-    Сохранение результатов с диаризацией
-    """
-    if not results:
-        return None, None, None
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # 1. Текстовый файл с метками говорящих
-    txt_path = os.path.join(output_dir, f"{base_name}_diarized.txt")
-    with open(txt_path, 'w', encoding='utf-8') as f:
-        f.write(f"Результаты диаризации для {base_name}\n")
-        f.write("=" * 50 + "\n\n")
-        
-        for result in results:
-            start_min = int(result['start'] // 60)
-            start_sec = int(result['start'] % 60)
-            end_min = int(result['end'] // 60)
-            end_sec = int(result['end'] % 60)
-            
-            f.write(f"[{result['speaker']}] {start_min:02d}:{start_sec:02d} - {end_min:02d}:{end_sec:02d}\n")
-            f.write(f"{result['text']}\n\n")
-    
-    # 2. JSON с детальной информацией
-    json_path = os.path.join(output_dir, f"{base_name}_diarized.json")
-    with open(json_path, 'w', encoding='utf-8') as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-    
-    # 3. SRT с метками говорящих
-    srt_path = os.path.join(output_dir, f"{base_name}_diarized.srt")
-    with open(srt_path, 'w', encoding='utf-8') as f:
-        for i, result in enumerate(results, 1):
-            start = format_timestamp(result['start'])
-            end = format_timestamp(result['end'])
-            speaker = result['speaker']
-            text = result['text']
-            
-            f.write(f"{i}\n{start} --> {end}\n[{speaker}] {text}\n\n")
-    
-    print(f"💾 Файлы диаризации сохранены: {base_name}_diarized.*")
-    return txt_path, json_path, srt_path
-
-def save_single_result(result, output_dir, enable_diarization=False, model=None, n_speakers=2):
+def save_single_result(result, output_dir):
     """
     Сохранение результата одного файла сразу после обработки
     """
@@ -462,26 +196,7 @@ def save_single_result(result, output_dir, enable_diarization=False, model=None,
         f.write(f"=== {os.path.basename(result['file'])} ===\n")
         f.write(f"{result['text']}\n\n")
     
-    # Диаризация (если включена и есть модель)
-    if enable_diarization and model:
-        try:
-            diarized_results = transcribe_with_diarization(
-                model, result['file'], output_dir, language="ru", n_speakers=n_speakers
-            )
-            if diarized_results:
-                save_diarized_results(diarized_results, output_dir, base_name)
-        except Exception as e:
-            print(f"⚠️  Ошибка диаризации для {base_name}: {e}")
-    
     print(f"💾 Файл сохранен: {base_name}.txt, {base_name}.srt")
-
-def format_timestamp(seconds):
-    """Форматирование времени для SRT"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds % 1) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 def save_final_json(results, output_dir):
     """Сохранение финального JSON файла со всеми результатами"""
@@ -518,8 +233,6 @@ def main():
     output_directory = "transcripts"
     model_size = "large"  # tiny, base, small, medium, large
     language = "ru"  # Русский язык
-    enable_diarization = False  # Диаризация по умолчанию выключена
-    n_speakers = 2  # Количество говорящих по умолчанию
     
     # Получение параметров из аргументов командной строки
     if len(sys.argv) > 1:
@@ -528,22 +241,11 @@ def main():
         model_size = sys.argv[2]
     if len(sys.argv) > 3:
         output_directory = sys.argv[3]
-    if len(sys.argv) > 4:
-        enable_diarization = sys.argv[4].lower() in ['true', '1', 'yes', 'y']
-    if len(sys.argv) > 5:
-        try:
-            n_speakers = int(sys.argv[5])
-        except ValueError:
-            print("⚠️  Неверное количество говорящих, используется значение по умолчанию: 2")
-            n_speakers = 2
     
     print(f"📁 Директория с аудио: {input_directory}")
     print(f"🎯 Модель: {model_size}")
     print(f"💾 Выходная директория: {output_directory}")
     print(f"🌍 Язык: {language}")
-    print(f"🎤 Диаризация: {'ВКЛЮЧЕНА' if enable_diarization else 'ВЫКЛЮЧЕНА'}")
-    if enable_diarization:
-        print(f"👥 Количество говорящих: {n_speakers}")
     print()
     
     # Проверка GPU
@@ -589,8 +291,8 @@ def main():
         
         if result:
             results.append(result)
-            # Сохраняем результат сразу после обработки с диаризацией
-            save_single_result(result, output_directory, enable_diarization, model, n_speakers)
+            # Сохраняем результат сразу после обработки
+            save_single_result(result, output_directory)
             
             # Показываем превью текста
             if result['text']:
@@ -613,24 +315,17 @@ def main():
     print(f"  - transcripts_detailed.json (JSON с деталями)")
     print(f"  - [имя_файла].txt (отдельные текстовые файлы)")
     print(f"  - [имя_файла].srt (субтитры)")
-    
-    if enable_diarization:
-        print(f"  - [имя_файла]_diarized.* (файлы с диаризацией)")
 
 if __name__ == "__main__":
     # Справка по использованию
     if len(sys.argv) > 1 and sys.argv[1] in ['-h', '--help']:
         print("Использование:")
-        print("  python whisper_transcribe.py [директория] [модель] [выходная_папка] [диаризация] [говорящие]")
+        print("  python whisper_transcribe.py [директория] [модель] [выходная_папка]")
         print("\nПримеры:")
         print("  python whisper_transcribe.py")
         print("  python whisper_transcribe.py ./audio")
         print("  python whisper_transcribe.py ./audio large ./results")
-        print("  python whisper_transcribe.py ./audio large ./results true")
-        print("  python whisper_transcribe.py ./audio large ./results true 3")
         print("\nМодели: tiny, base, small, medium, large")
-        print("Диаризация: true/false (по умолчанию false)")
-        print("Говорящие: количество говорящих (по умолчанию 2)")
         print("Чем больше модель, тем точнее, но медленнее")
         sys.exit(0)
     

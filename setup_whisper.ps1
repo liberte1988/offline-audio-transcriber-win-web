@@ -219,12 +219,11 @@ Write-Host "Для активации окружения используйте:
 Write-Host ".\.venv\Scripts\Activate.ps1" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Для запуска транскрибации:" -ForegroundColor Yellow
-Write-Host "python whisper_transcribe.py [папка_с_аудио] [модель] [выходная_папка] [диаризация] [говорящие]" -ForegroundColor Cyan
+Write-Host "python whisper_transcribe.py [папка_с_аудио] [модель] [выходная_папка]" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Примеры:" -ForegroundColor Yellow
 Write-Host "python whisper_transcribe.py ./audio" -ForegroundColor Cyan
 Write-Host "python whisper_transcribe.py ./audio large ./results" -ForegroundColor Cyan
-Write-Host "python whisper_transcribe.py ./audio large ./results true 2" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Доступные модели (от быстрой к точной):" -ForegroundColor Yellow
 Write-Host "tiny, base, small, medium, large" -ForegroundColor Cyan
